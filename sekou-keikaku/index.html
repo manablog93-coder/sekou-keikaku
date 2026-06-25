@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>施工計画書たたき台ジェネレーター（無料版）</title>
+<style>
+  :root {
+    --ink: #16324F;        /* 図面ネイビー：見出し・主ボタン */
+    --ink-soft: #3D5A78;
+    --paper: #F2F4F6;      /* 背景 */
+    --card: #FFFFFF;
+    --line: #D8DEE5;
+    --amber: #B97A0C;      /* 注記・どこを見る */
+    --amber-bg: #FDF6E7;
+    --cold: #2D6CB5;       /* 寒中バッジ */
+    --cold-bg: #EAF2FB;
+    --hot: #C0512F;        /* 暑中バッジ */
+    --hot-bg: #FBEFEA;
+    --req: #C0392B;
+    --text: #2B3440;
+    --muted: #6B7682;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+    background: var(--paper);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 24px 16px 80px; }
+
+  /* ヘッダー */
+  .tool-head {
+    background: var(--ink); color: #fff; border-radius: 10px;
+    padding: 22px 24px; margin-bottom: 20px;
+  }
+  .tool-head h1 { font-size: 20px; letter-spacing: .02em; }
+  .tool-head p { font-size: 13px; opacity: .85; margin-top: 6px; }
+  .free-tag {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    background: #fff; color: var(--ink); border-radius: 3px;
+    padding: 1px 8px; margin-left: 8px; vertical-align: middle;
+  }
+
+  /* 工種選択 */
+  .kinds { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+  .kind {
+    border: 1.5px solid var(--line); background: var(--card); color: var(--muted);
+    border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: not-allowed;
+  }
+  .kind.active {
+    border-color: var(--ink); background: var(--ink); color: #fff;
+    font-weight: 700; cursor: default;
+  }
+  .kind .soon { font-size: 10px; opacity: .7; display: block; line-height: 1.2; }
+
+  /* セクションカード */
+  .sec {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px 20px 22px; margin-bottom: 14px;
+  }
+  .sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .sec-num {
+    flex: none; width: 26px; height: 26px; border-radius: 5px;
+    background: var(--ink); color: #fff; font-weight: 700; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sec-head h2 { font-size: 16px; color: var(--ink); }
+  .lookat {
+    background: var(--amber-bg); border-left: 3px solid var(--amber);
+    color: var(--amber); font-size: 12.5px; border-radius: 0 6px 6px 0;
+    padding: 7px 12px; margin: 8px 0 14px;
+  }
+  .lookat b { font-weight: 700; }
+
+  /* フォーム部品 */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+  .grid .full { grid-column: 1 / -1; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  label.fld { display: block; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+  .req::after { content: " 必須"; color: var(--req); font-size: 10.5px; font-weight: 700; }
+  input[type="text"], input[type="number"], input[type="date"], select, textarea {
+    width: 100%; margin-top: 4px;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    padding: 9px 10px; font-size: 15px; font-family: inherit;
+    background: #fff; color: var(--text);
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--ink); outline-offset: 1px; border-color: var(--ink);
+  }
+  textarea { resize: vertical; min-height: 64px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .chk {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1.5px solid var(--line); border-radius: 6px;
+    padding: 7px 12px; font-size: 14px; cursor: pointer; background: #fff;
+    user-select: none;
+  }
+  .chk input { accent-color: var(--ink); }
+  .chk:has(input:checked) { border-color: var(--ink); background: #EDF2F7; font-weight: 700; }
+
+  /* 季節バッジ */
+  .season-badges { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    font-size: 12.5px; font-weight: 700; border-radius: 6px; padding: 5px 12px;
+    display: none; animation: pop .25s ease;
+  }
+  .badge.show { display: inline-block; }
+  .badge.cold { background: var(--cold-bg); color: var(--cold); border: 1px solid var(--cold); }
+  .badge.hot { background: var(--hot-bg); color: var(--hot); border: 1px solid var(--hot); }
+  @keyframes pop { from { transform: scale(.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .badge { animation: none; } }
+
+  /* 配合ブロック */
+  .mix-block {
+    border: 1px dashed var(--line); border-radius: 8px;
+    padding: 14px; margin-top: 10px; position: relative;
+  }
+  .mix-block .rm {
+    position: absolute; top: 8px; right: 8px;
+    border: none; background: none; color: var(--muted); cursor: pointer; font-size: 13px;
+    text-decoration: underline;
+  }
+  .add-btn {
+    margin-top: 10px; border: 1.5px dashed var(--ink-soft); background: none;
+    color: var(--ink-soft); border-radius: 6px; padding: 8px 14px;
+    font-size: 13.5px; font-weight: 700; cursor: pointer; width: 100%;
+  }
+  .add-btn:hover { background: #EDF2F7; }
+
+  /* 季節対策セクション */
+  #sec7 { display: none; }
+  #sec7.show { display: block; }
+  .season-note { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  .season-sub { display: none; margin-top: 10px; }
+  .season-sub.show { display: block; }
+  .season-sub h3 { font-size: 14px; margin-bottom: 8px; }
+  .season-sub.cold h3 { color: var(--cold); }
+  .season-sub.hot h3 { color: var(--hot); }
+
+  /* 生成ボタン・結果 */
+  .gen-btn {
+    width: 100%; border: none; border-radius: 10px;
+    background: var(--ink); color: #fff; font-size: 17px; font-weight: 700;
+    padding: 16px; cursor: pointer; margin-top: 6px; font-family: inherit;
+  }
+  .gen-btn:hover { background: #0F2438; }
+  .gen-btn:disabled { background: #9AA7B3; cursor: wait; }
+  .err-msg { color: var(--req); font-size: 13.5px; font-weight: 700; margin-top: 10px; display: none; }
+  .err-msg.show { display: block; }
+
+  .loading { display: none; text-align: center; padding: 28px 0 8px; color: var(--ink-soft); }
+  .loading.show { display: block; }
+  .spinner {
+    width: 30px; height: 30px; border: 3px solid var(--line); border-top-color: var(--ink);
+    border-radius: 50%; margin: 0 auto 10px; animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #result { display: none; margin-top: 20px; }
+  #result.show { display: block; }
+  .result-bar {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .result-bar h2 { font-size: 16px; color: var(--ink); }
+  .copy-btn {
+    border: 1.5px solid var(--ink); background: #fff; color: var(--ink);
+    border-radius: 6px; padding: 7px 16px; font-size: 13.5px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+  }
+  .copy-btn:hover { background: #EDF2F7; }
+  .doc {
+    background: #fff; border: 1px solid var(--line); border-radius: 10px;
+    padding: 24px 22px; font-size: 14.5px;
+  }
+  .doc h1 { font-size: 19px; color: var(--ink); margin: 0 0 12px; }
+  .doc h2 { font-size: 16px; color: var(--ink); margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 2px solid var(--ink); }
+  .doc h3 { font-size: 14.5px; color: var(--ink-soft); margin: 14px 0 6px; }
+  .doc p { margin: 8px 0; }
+  .doc ul { margin: 8px 0 8px 22px; }
+  .doc blockquote {
+    border-left: 3px solid var(--amber); background: var(--amber-bg);
+    padding: 8px 12px; margin: 10px 0; border-radius: 0 6px 6px 0; font-size: 13.5px;
+  }
+  .doc table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13.5px; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; }
+  .doc th { background: #EDF2F7; color: var(--ink); }
+  .doc .kakunin { color: var(--req); font-weight: 700; }
+  .doc .upsell-inline { color: var(--amber); font-weight: 700; }
+
+  /* 製品版CTA */
+  .cta {
+    margin-top: 18px; background: var(--ink); color: #fff;
+    border-radius: 10px; padding: 20px 22px;
+  }
+  .cta h3 { font-size: 16px; margin-bottom: 8px; }
+  .cta ul { margin: 0 0 14px 20px; font-size: 13.5px; opacity: .95; }
+  .cta a {
+    display: inline-block; background: #fff; color: var(--ink);
+    font-weight: 700; border-radius: 6px; padding: 10px 20px;
+    text-decoration: none; font-size: 14px;
+  }
+  .disclaimer { font-size: 12px; color: var(--muted); margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="tool-head">
+    <h1>施工計画書たたき台ジェネレーター<span class="free-tag">無料版</span></h1>
+    <p>工種を選んで、図面・仕様書から拾った情報を入力するだけ。施工計画書のドラフトを自動生成します。</p>
+  </div>
+
+  <!-- 工種選択 -->
+  <div class="kinds">
+    <div class="kind active">コンクリート工事</div>
+    <div class="kind">鉄筋工事<span class="soon">準備中</span></div>
+    <div class="kind">型枠工事<span class="soon">準備中</span></div>
+    <div class="kind">鉄骨工事<span class="soon">準備中</span></div>
+    <div class="kind">土工事・地業<span class="soon">準備中</span></div>
+  </div>
+
+  <!-- ① 基本情報 -->
+  <div class="sec">
+    <div class="sec-head"><div class="sec-num">1</div><h2>基本情報</h2></div>
+    <div class="grid">
+      <div class="full">
+        <label class="fld req" for="koujimei">工事名</label>
+        <input type="text" id="koujimei" placeholder="例：（仮称）○○共同住宅新築工事">
+      </div>
+      <div class="full">
+        <label class="fld" for="basho">工事場所</label>
+        <input type="text" id="basho" placeholder="例：東京都立川市○○町1-2-3">
+      </div>
+      <div>
+        <label class="fld req" for="kouki-start">工期（開始）</label>
+        <input type="date" id="kouki-start">
+      </div>
+      <div>
+        <label class="fld req" for="kouki-end">工期（終了）</label>
+        <input type="date" id="kouki-end">
+      </div>
+      <div class="full">
+        <span class="fld req">対象部位（複数選択可）</span>
+        <div class="checks" id="parts">
+          <label class="chk"><input type="checkbox" value="基礎">基礎</label>
+          <label class="chk"><input type="checkbox" value="地中梁">地中梁</label>
+          <label class="chk"><input type="checkbox" value="柱">柱</label>
+          <label class="chk"><input type="checkbox" value="梁">梁</label>
+          <label class="chk"><input type="checkbox" value="スラブ">スラブ</label>
+          <label class="chk"><input type="checkbox" value="壁">壁</label>
+          <label class="chk"><input type="checkbox" value="その他">その他</label>
+        </div>
+      </div>
+      <div>
+        <label class="fld" for="kouzou">構造種別</label>
+        <select id="kouzou">
+          <option value="RC">RC</option>
+          <option value="SRC">SRC</option>
+          <option value="PCa">PCa</option>
+        </select>
+      </div>
+    </div>
+    <div class="season-badges">
+      <span class="badge cold" id="badge-cold">❄ 工期に冬期を含むため「寒中コンクリート」対策の入力欄を表示しています</span>
+      <span class="badge hot" id="badge-hot">☀ 工期に夏期を含むため「暑中コンクリート」対策の入力欄を表示しています</span>
+    </div>
+  </div>
+
+  <!-- ② 使用材料・配合 -->
+  <div class="sec">
+    <div class="sec-head"><div class="sec-num">2</div><h2>使用材料・配合</h2></div>
+    <div class="lookat">📐 <b>どこを見る：</b>構造図の一般事項・特記仕様書。部位で強度が違う場合は「部位を追加」で分けて入力。</div>
+    <div id="mix-list"></div>
+    <button type="button" class="add-btn" onclick="addMixBlock()">＋ 部位を追加</button>
+  </div>
+
+  <!-- ③ 打設計画 -->
+  <div class="sec">
+    <div class="sec-head"><div class="sec-num">3</div><h2>打設計画</h2></div>
+    <div class="lookat">📐 <b>どこを見る：</b>伏図・軸組図で打継ぎ位置を確認。数量は自分で拾った値を入力。</div>
+    <div class="grid">
+      <div class="full">
+        <label class="fld" for="kukaku">打設区画・順序</label>
+        <textarea id="kukaku" placeholder="例：1階を東西2区画に分割。東区画→西区画の順で打設"></textarea>
+      </div>
+      <div class="full">
+        <label class="fld" for="uchitsugi">打継ぎ位置</label>
+        <textarea id="uchitsugi" placeholder="例：梁・スラブは中央付近、柱は床上で打止め"></textarea>
+      </div>
+      <div>
+        <label class="fld" for="suuryou">1回あたり打設数量（m³）</label>
+        <input type="number" id="suuryou" min="0" step="0.1" placeholder="例：45">
+      </div>
+      <div>
+        <label class="fld" for="rakka">打設高さ・落下高さ（m）</label>
+        <input type="number" id="rakka" min="0" step="0.1" placeholder="例：1.5">
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ 運搬・圧送 -->
+  <div class="sec">
+    <div class="sec-head"><div class="sec-num">4</div><h2>運搬・圧送</h2></div>
+    <div class="lookat">📐 <b>注意：</b>練混ぜから打込み完了までの時間制限に直結します。運搬時間は実測ベースで。</div>
+    <div class="grid">
+      <div>
+        <label class="fld" for="koujou">生コン工場名</label>
+        <input type="text" id="koujou" placeholder="例：○○生コン 立川工場">
+      </div>
+      <div>
+        <label class="fld" for="unpan">運搬時間（分）</label>
+        <input type="number" id="unpan" min="0" placeholder="例：60">
+      </div>
+      <div>
+        <label class="fld" for="pump">ポンプ車</label>
+        <select id="pump">
+          <option value="">選択してください</option>
+          <option value="ブーム車">ブーム車</option>
+          <option value="配管圧送">配管圧送</option>
+        </select>
+      </div>
+      <div>
+        <label class="fld" for="daisu">台数</label>
+        <input type="number" id="daisu" min="0" placeholder="例：1">
+      </div>
+      <div class="full">
+        <label class="fld" for="assou">圧送高さ・距離</label>
+        <input type="text" id="assou" placeholder="例：高さ12m・水平30m">
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑤ 養生 -->
+  <div class="sec">
+    <div class="sec-head"><div class="sec-num">5</div><h2>養生</h2></div>
+    <div class="grid">
+      <div class="full">
+        <span class="fld">養生方法（複数選択可）</span>
+        <div class="checks" id="yojo-methods">
+          <label class="chk"><input type="checkbox" value="湿潤">湿潤</label>
+          <label class="chk"><input type="checkbox" value="被膜">被膜</label>
+          <label class="chk"><input type="checkbox" value="加熱">加熱</label>
+        </div>
+      </div>
+      <div>
+        <label class="fld" for="yojo-days">養生期間（日）</label>
+        <input type="number" id="yojo-days" min="0" placeholder="例：5">
+      </div>
+      <div>
+        <label class="fld" for="sonchi">型枠存置期間（日）</label>
+        <input type="number" id="sonchi" min="0" placeholder="例：4">
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑥ 品質管理・試験 -->
+  <div class="sec">
+    <div class="sec-head"><div class="sec-num">6</div><h2>品質管理・試験</h2></div>
+    <div class="lookat">📐 <b>どこを見る：</b>特記仕様書の試験規定。迷ったら「150m³ごとに1回」が一般的な目安。</div>
+    <div class="grid">
+      <div class="full">
+        <label class="fld" for="shiken">試験頻度の考え方</label>
+        <input type="text" id="shiken" placeholder="例：150m³ごとに1回">
+      </div>
+      <div class="full">
+        <span class="fld">供試体 材齢（複数選択可）</span>
+        <div class="checks" id="zairei">
+          <label class="chk"><input type="checkbox" value="7日">7日</label>
+          <label class="chk"><input type="checkbox" value="28日">28日</label>
+          <label class="chk"><input type="checkbox" value="その他">その他</label>
+        </div>
+      </div>
+      <div class="full">
+        <span class="fld">受入検査項目（複数選択可）</span>
+        <div class="checks" id="ukeire">
+          <label class="chk"><input type="checkbox" value="スランプ">スランプ</label>
+          <label class="chk"><input type="checkbox" value="空気量">空気量</label>
+          <label class="chk"><input type="checkbox" value="塩化物">塩化物</label>
+          <label class="chk"><input type="checkbox" value="温度">温度</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑦ 季節対策（工期から自動表示） -->
+  <div class="sec" id="sec7">
+    <div class="sec-head"><div class="sec-num">7</div><h2>季節対策</h2></div>
+    <div class="season-note">入力された工期から自動判定しています。該当する対策を確認・追記してください。</div>
+
+    <div class="season-sub cold" id="cold-sub">
+      <h3>❄ 寒中コンクリート</h3>
+      <div class="grid">
+        <div>
+          <label class="fld" for="cold-temp">初期養生温度（℃）</label>
+          <input type="number" id="cold-temp" placeholder="例：2">
+        </div>
+        <div>
+          <label class="fld" for="cold-kanetsu">加熱養生の方法</label>
+          <input type="text" id="cold-kanetsu" placeholder="例：ジェットヒーター給熱">
+        </div>
+        <div class="full">
+          <label class="fld" for="cold-hoon">保温方法</label>
+          <input type="text" id="cold-hoon" placeholder="例：養生シート＋断熱マット">
+        </div>
+      </div>
+    </div>
+
+    <div class="season-sub hot" id="hot-sub">
+      <h3>☀ 暑中コンクリート</h3>
+      <div class="grid">
+        <div>
+          <label class="fld" for="hot-temp">練上がり温度の上限（℃）</label>
+          <input type="number" id="hot-temp" placeholder="例：35">
+        </div>
+        <div>
+          <label class="fld" for="hot-unpan">運搬時間の短縮対策</label>
+          <input type="text" id="hot-unpan" placeholder="例：近距離工場の選定・出荷調整">
+        </div>
+        <div class="full">
+          <label class="fld" for="hot-cj">コールドジョイント対策</label>
+          <input type="text" id="hot-cj" placeholder="例：打重ね時間の管理・人員増強">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑧ 打設体制・安全 -->
+  <div class="sec">
+    <div class="sec-head"><div class="sec-num">8</div><h2>打設体制・安全</h2></div>
+    <div class="grid">
+      <div class="full">
+        <label class="fld" for="jinin">打設人員</label>
+        <input type="text" id="jinin" placeholder="例：圧送工2名・打設工3名・左官2名・誘導員1名">
+      </div>
+      <div class="full">
+        <label class="fld" for="kikai">使用機械</label>
+        <input type="text" id="kikai" placeholder="例：コンクリートポンプ車、内部振動機4台">
+      </div>
+      <div class="full">
+        <label class="fld" for="tachiai">立会者・検査者</label>
+        <input type="text" id="tachiai" placeholder="例：監理者立会、自主検査：現場代理人">
+      </div>
+      <div class="full">
+        <label class="fld" for="anzen">安全対策</label>
+        <textarea id="anzen" placeholder="例：開口部養生、配管支持の確認、打設中の型枠監視員配置"></textarea>
+      </div>
+      <div class="full">
+        <label class="fld" for="kinkyuu">緊急時連絡体制</label>
+        <textarea id="kinkyuu" placeholder="例：現場代理人→所長→本社。救急連絡先を朝礼で周知"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <button type="button" class="gen-btn" id="gen-btn" onclick="generate()">施工計画書のたたき台を生成する</button>
+  <div class="err-msg" id="err-msg"></div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div id="loading-msg">入力内容を整理しています…</div>
+  </div>
+
+  <!-- 結果 -->
+  <div id="result">
+    <div class="result-bar">
+      <h2>生成結果（ドラフト）</h2>
+      <button type="button" class="copy-btn" id="copy-btn" onclick="copyResult()">テキストをコピー</button>
+    </div>
+    <div class="doc" id="doc"></div>
+
+    <div class="cta">
+      <h3>製品版なら、ここからさらに踏み込めます</h3>
+      <ul>
+        <li>内装・防水・左官・タイル・建具・塗装まで全工種に対応</li>
+        <li>確認ポイントを上限なしで網羅出力（漏れ防止チェックリストとして使える）</li>
+        <li>Word（.docx）出力 ─ ※要確認箇所は黄色ハイライト付きで印刷してすぐ使える</li>
+        <li>入力内容の保存・呼び出し</li>
+      </ul>
+      <a href="https://note.com/navi93" target="_blank" rel="noopener">製品版の詳細を見る（note）</a>
+    </div>
+
+    <p class="disclaimer">本ツールが生成するのは施工計画書のドラフト（たたき台）です。記載内容・数値は必ず最新の設計図書・仕様書と照合し、施工管理責任者の確認のうえ確定してください。</p>
+  </div>
+
+</div>
+
+<script>
+/* ---------- 配合ブロック ---------- */
+let mixCount = 0;
+
+function getCheckedParts() {
+  return Array.from(document.querySelectorAll('#parts input:checked')).map(c => c.value);
+}
+
+function addMixBlock() {
+  mixCount++;
+  const id = mixCount;
+  const div = document.createElement('div');
+  div.className = 'mix-block';
+  div.dataset.mixId = id;
+  div.innerHTML = `
+    ${id > 1 ? '<button type="button" class="rm" onclick="this.parentElement.remove()">削除</button>' : ''}
+    <div class="grid">
+      <div>
+        <label class="fld">部位</label>
+        <select class="mix-part"></select>
+      </div>
+      <div>
+        <label class="fld req">呼び強度 Fc（N/mm²）</label>
+        <input type="number" class="mix-fc" min="0" placeholder="例：24">
+      </div>
+      <div>
+        <label class="fld">スランプ（cm）</label>
+        <input type="number" class="mix-slump" min="0" step="0.5" placeholder="例：18">
+      </div>
+      <div>
+        <label class="fld">粗骨材最大寸法（mm）</label>
+        <select class="mix-agg">
+          <option value="">─</option>
+          <option value="20">20</option>
+          <option value="25">25</option>
+          <option value="40">40</option>
+        </select>
+      </div>
+      <div>
+        <label class="fld">セメント種類</label>
+        <select class="mix-cement">
+          <option value="">─</option>
+          <option value="普通">普通ポルトランド</option>
+          <option value="早強">早強</option>
+          <option value="高炉B種">高炉B種</option>
+          <option value="低熱">低熱</option>
+          <option value="中庸熱">中庸熱</option>
+        </select>
+      </div>
+      <div>
+        <label class="fld">空気量（%）</label>
+        <input type="number" class="mix-air" min="0" step="0.1" placeholder="例：4.5">
+      </div>
+    </div>`;
+  document.getElementById('mix-list').appendChild(div);
+  syncPartOptions();
+}
+
+function syncPartOptions() {
+  const parts = getCheckedParts();
+  document.querySelectorAll('.mix-part').forEach(sel => {
+    const current = sel.value;
+    sel.innerHTML = '';
+    const optAll = document.createElement('option');
+    optAll.value = '全部位共通';
+    optAll.textContent = '全部位共通';
+    sel.appendChild(optAll);
+    parts.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p; o.textContent = p;
+      sel.appendChild(o);
+    });
+    if ([...sel.options].some(o => o.value === current)) sel.value = current;
+  });
+}
+
+document.getElementById('parts').addEventListener('change', syncPartOptions);
+addMixBlock(); // 初期1ブロック
+
+/* ---------- 季節判定 ---------- */
+function detectSeasons() {
+  const s = document.getElementById('kouki-start').value;
+  const e = document.getElementById('kouki-end').value;
+  const res = { cold: false, hot: false };
+  if (!s || !e) return res;
+  let d = new Date(s + 'T00:00:00');
+  const end = new Date(e + 'T00:00:00');
+  if (isNaN(d) || isNaN(end) || d > end) return res;
+  let guard = 0;
+  while (d <= end && guard < 120) {
+    const m = d.getMonth() + 1;
+    if ([11, 12, 1, 2, 3].includes(m)) res.cold = true;
+    if ([6, 7, 8, 9].includes(m)) res.hot = true;
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    guard++;
+  }
+  return res;
+}
+
+function updateSeasonUI() {
+  const s = detectSeasons();
+  document.getElementById('badge-cold').classList.toggle('show', s.cold);
+  document.getElementById('badge-hot').classList.toggle('show', s.hot);
+  document.getElementById('cold-sub').classList.toggle('show', s.cold);
+  document.getElementById('hot-sub').classList.toggle('show', s.hot);
+  document.getElementById('sec7').classList.toggle('show', s.cold || s.hot);
+}
+
+document.getElementById('kouki-start').addEventListener('change', updateSeasonUI);
+document.getElementById('kouki-end').addEventListener('change', updateSeasonUI);
+
+/* ---------- ユーティリティ ---------- */
+const v = id => {
+  const el = document.getElementById(id);
+  const val = el.value.trim();
+  return val === '' ? null : (el.type === 'number' ? Number(val) : val);
+};
+const checked = id => Array.from(document.querySelectorAll('#' + id + ' input:checked')).map(c => c.value);
+
+/* ---------- 入力収集 ---------- */
+function collectInput() {
+  const seasons = detectSeasons();
+  const seasonList = [];
+  if (seasons.cold) seasonList.push('寒中');
+  if (seasons.hot) seasonList.push('暑中');
+
+  const mixes = Array.from(document.querySelectorAll('.mix-block')).map(b => ({
+    '部位': b.querySelector('.mix-part').value || null,
+    'Fc': b.querySelector('.mix-fc').value ? Number(b.querySelector('.mix-fc').value) : null,
+    'スランプ': b.querySelector('.mix-slump').value ? Number(b.querySelector('.mix-slump').value) : null,
+    '粗骨材最大寸法': b.querySelector('.mix-agg').value ? Number(b.querySelector('.mix-agg').value) : null,
+    'セメント種類': b.querySelector('.mix-cement').value || null,
+    '空気量': b.querySelector('.mix-air').value ? Number(b.querySelector('.mix-air').value) : null
+  }));
+
+  const data = {
+    '工種': 'コンクリート工事',
+    '工事概要': {
+      '工事名': v('koujimei'),
+      '工事場所': v('basho'),
+      '工期': (v('kouki-start') || '') + ' 〜 ' + (v('kouki-end') || ''),
+      '対象部位': checked('parts'),
+      '構造種別': document.getElementById('kouzou').value
+    },
+    '材料配合': mixes,
+    '打設計画': {
+      '打設区画・順序': v('kukaku'),
+      '打継ぎ位置': v('uchitsugi'),
+      '1回あたり打設数量_m3': v('suuryou'),
+      '打設高さ・落下高さ_m': v('rakka')
+    },
+    '運搬圧送': {
+      '生コン工場名': v('koujou'),
+      '運搬時間_分': v('unpan'),
+      'ポンプ車': v('pump'),
+      '台数': v('daisu'),
+      '圧送高さ・距離': v('assou')
+    },
+    '養生': {
+      '養生方法': checked('yojo-methods'),
+      '養生期間_日': v('yojo-days'),
+      '型枠存置期間_日': v('sonchi')
+    },
+    '品質管理': {
+      '試験頻度': v('shiken'),
+      '供試体材齢': checked('zairei'),
+      '受入検査項目': checked('ukeire')
+    },
+    '季節対策': seasonList.length ? seasonList.join('・') : null,
+    '季節対策詳細': {
+      '寒中': seasons.cold ? {
+        '初期養生温度_℃': v('cold-temp'),
+        '加熱養生の方法': v('cold-kanetsu'),
+        '保温方法': v('cold-hoon')
+      } : undefined,
+      '暑中': seasons.hot ? {
+        '練上がり温度上限_℃': v('hot-temp'),
+        '運搬時間短縮対策': v('hot-unpan'),
+        'コールドジョイント対策': v('hot-cj')
+      } : undefined
+    },
+    '安全体制': {
+      '打設人員': v('jinin'),
+      '使用機械': v('kikai'),
+      '立会者・検査者': v('tachiai'),
+      '安全対策': v('anzen'),
+      '緊急時連絡体制': v('kinkyuu')
+    }
+  };
+  return data;
+}
+
+/* ---------- バリデーション ---------- */
+function validate(data) {
+  const errs = [];
+  if (!data['工事概要']['工事名']) errs.push('工事名');
+  if (!document.getElementById('kouki-start').value || !document.getElementById('kouki-end').value) errs.push('工期');
+  if (data['工事概要']['対象部位'].length === 0) errs.push('対象部位');
+  if (!data['材料配合'].some(m => m['Fc'])) errs.push('呼び強度（最低1部位）');
+  return errs;
+}
+
+/* ---------- 生成 ---------- */
+const LOADING_MSGS = [
+  '入力内容を整理しています…',
+  '章立てに沿ってドラフトを作成中…（30秒〜1分ほどかかります）',
+  '確認ポイントをまとめています…',
+  'もう少しで完成します…'
+];
+let loadingTimer = null;
+let lastMarkdown = '';
+
+async function generate() {
+  const errEl = document.getElementById('err-msg');
+  errEl.classList.remove('show');
+
+  const data = collectInput();
+  const errs = validate(data);
+  if (errs.length) {
+    errEl.textContent = '未入力の必須項目があります：' + errs.join('／');
+    errEl.classList.add('show');
+    errEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  const btn = document.getElementById('gen-btn');
+  const loading = document.getElementById('loading');
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  loading.classList.add('show');
+  document.getElementById('result').classList.remove('show');
+
+  let msgIdx = 0;
+  document.getElementById('loading-msg').textContent = LOADING_MSGS[0];
+  loadingTimer = setInterval(() => {
+    msgIdx = Math.min(msgIdx + 1, LOADING_MSGS.length - 1);
+    document.getElementById('loading-msg').textContent = LOADING_MSGS[msgIdx];
+  }, 9000);
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data })
+    });
+    const json = await res.json();
+    if (!res.ok || !json.text) {
+      throw new Error(json.error || '生成に失敗しました');
+    }
+    lastMarkdown = json.text;
+    document.getElementById('doc').innerHTML = renderMarkdown(json.text);
+    document.getElementById('result').classList.add('show');
+    document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    errEl.textContent = e.message + '（時間をおいて再度お試しください）';
+    errEl.classList.add('show');
+  } finally {
+    clearInterval(loadingTimer);
+    loading.classList.remove('show');
+    btn.disabled = false;
+    btn.textContent = '施工計画書のたたき台を生成する';
+  }
+}
+
+/* ---------- コピー ---------- */
+async function copyResult() {
+  if (!lastMarkdown) return;
+  try {
+    await navigator.clipboard.writeText(lastMarkdown);
+    const b = document.getElementById('copy-btn');
+    const t = b.textContent;
+    b.textContent = 'コピーしました ✓';
+    setTimeout(() => { b.textContent = t; }, 1800);
+  } catch (e) {
+    alert('コピーに失敗しました。テキストを選択して手動でコピーしてください。');
+  }
+}
+
+/* ---------- 簡易Markdownレンダラー ---------- */
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function inlineFmt(s) {
+  let out = escapeHtml(s);
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/※要確認（未入力）|※要確認/g, m => '<span class="kakunin">' + m + '</span>');
+  out = out.replace(/▶ 製品版で[^<]*/g, m => '<span class="upsell-inline">' + m + '</span>');
+  return out;
+}
+function renderMarkdown(md) {
+  const lines = md.split('\n');
+  let html = '', i = 0;
+  let inList = false, inQuote = false;
+  const closeBlocks = () => {
+    if (inList) { html += '</ul>'; inList = false; }
+    if (inQuote) { html += '</blockquote>'; inQuote = false; }
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // テーブル
+    if (line.trim().startsWith('|') && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+      closeBlocks();
+      const headers = line.split('|').slice(1, -1).map(c => c.trim());
+      html += '<table><thead><tr>' + headers.map(h => '<th>' + inlineFmt(h) + '</th>').join('') + '</tr></thead><tbody>';
+      i += 2;
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        const cells = lines[i].split('|').slice(1, -1).map(c => c.trim());
+        html += '<tr>' + cells.map(c => '<td>' + inlineFmt(c) + '</td>').join('') + '</tr>';
+        i++;
+      }
+      html += '</tbody></table>';
+      continue;
+    }
+
+    if (/^###\s+/.test(line)) { closeBlocks(); html += '<h3>' + inlineFmt(line.replace(/^###\s+/, '')) + '</h3>'; }
+    else if (/^##\s+/.test(line)) { closeBlocks(); html += '<h2>' + inlineFmt(line.replace(/^##\s+/, '')) + '</h2>'; }
+    else if (/^#\s+/.test(line)) { closeBlocks(); html += '<h1>' + inlineFmt(line.replace(/^#\s+/, '')) + '</h1>'; }
+    else if (/^\s*[-*]\s+/.test(line)) {
+      if (inQuote) { html += '</blockquote>'; inQuote = false; }
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += '<li>' + inlineFmt(line.replace(/^\s*[-*]\s+/, '')) + '</li>';
+    }
+    else if (/^>\s?/.test(line)) {
+      if (inList) { html += '</ul>'; inList = false; }
+      if (!inQuote) { html += '<blockquote>'; inQuote = true; }
+      html += inlineFmt(line.replace(/^>\s?/, '')) + ' ';
+    }
+    else if (/^---+\s*$/.test(line.trim())) { closeBlocks(); html += '<hr>'; }
+    else if (line.trim() === '') { closeBlocks(); }
+    else { closeBlocks(); html += '<p>' + inlineFmt(line) + '</p>'; }
+    i++;
+  }
+  closeBlocks();
+  return html;
+}
+</script>
+</body>
+</html>
