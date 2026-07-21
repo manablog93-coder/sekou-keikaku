@@ -224,15 +224,20 @@ const FormBuilder = (() => {
     const partsBox = document.getElementById('basic__parts');
     if (partsBox) partsBox.addEventListener('change', () => { syncPartsOptions(); });
 
+    // 日付（dateRangeSeason）は role で結線
     current.sections.forEach(sec => {
       (sec.fields || []).forEach(f => {
         if (f.role === 'dateStart' || f.role === 'dateEnd') {
           document.getElementById('basic__' + f.id)?.addEventListener('change', applyRules);
         }
-        if (f.role === 'jointMethod') {
-          document.getElementById(sec.id + '__' + f.id)?.addEventListener('change', applyRules);
-        }
       });
+    });
+    // checksInclude ルールの起点チェックを結線（工種を問わず全ルール対象）
+    (current.rules || []).forEach(rule => {
+      if (rule.kind === 'checksInclude') {
+        const [secId, fldId] = rule.field.split('.');
+        document.getElementById(secId + '__' + fldId)?.addEventListener('change', applyRules);
+      }
     });
     applyRules();
   }
