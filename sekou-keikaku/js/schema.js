@@ -268,6 +268,161 @@ const SCHEMA = {
         subMap: { 'ガス圧接': 'joint.gasatsu', '機械式継手': 'joint.kikai', '重ね継手': 'joint.kasane' } },
     ],
   },
+  /* ========================================================
+     型枠工事（工法・打放し・支保工高さで出し分け）
+     ======================================================== */
+  formwork: {
+    id: 'formwork',
+    label: '型枠工事',
+    sections: [
+      {
+        id: 'basic', num: 1, title: '基本情報',
+        fields: [
+          { id: 'koujimei', type: 'text', label: '工事名', required: true, full: true,
+            placeholder: '例：（仮称）○○共同住宅新築工事' },
+          { id: 'basho', type: 'text', label: '工事場所', full: true,
+            placeholder: '例：東京都立川市○○町1-2-3' },
+          { id: 'kouki_start', type: 'date', label: '工期（開始）', required: true, role: 'dateStart' },
+          { id: 'kouki_end', type: 'date', label: '工期（終了）', required: true, role: 'dateEnd' },
+          { id: 'parts', type: 'checks', label: '対象部位（複数選択可）', required: true, full: true,
+            role: 'parts',
+            options: ['基礎','地中梁','柱','梁','スラブ','壁','階段','その他'].map(v => ({ value: v, label: v })) },
+          { id: 'kouzou', type: 'select', label: '構造種別',
+            options: [{value:'RC',label:'RC'},{value:'SRC',label:'SRC'}] },
+        ],
+      },
+      {
+        id: 'method', num: 2, title: '型枠工法・使用材料',
+        lookat: '施工図・特記仕様書。使う工法にチェックを入れると、その工法の入力欄が下に開きます。',
+        fields: [
+          { id: 'kouhou', type: 'checks', label: '型枠工法（複数選択可）', full: true, role: 'formworkMethod',
+            options: [
+              '在来（合板型枠）','システム型枠','デッキプレート（床型枠）','ラス型枠（捨て型枠）','鋼製型枠'
+            ].map(v => ({ value: v, label: v })) },
+          { id: 'sekiita', type: 'select', label: 'せき板の種類',
+            options: [
+              {value:'',label:'─'},
+              {value:'普通合板（厚12mm）',label:'普通合板（厚12mm）'},
+              {value:'塗装合板（打放し用）',label:'塗装合板（打放し用）'},
+              {value:'その他',label:'その他'}] },
+          { id: 'uchihanashi', type: 'checks', label: '仕上げ', full: true, role: 'exposed',
+            options: [{ value: '打放し', label: '打放し仕上げあり' }] },
+        ],
+        subs: [
+          { id: 'zairai', tone: 'neutral', title: '在来（合板型枠）', showWhen: { field: 'kouhou', includes: '在来（合板型枠）' },
+            fields: [
+              { id: 'zairai_kanamono', type: 'text', label: '締付け金物', full: true, placeholder: '例：セパレータ＋フォームタイ' },
+              { id: 'zairai_bata', type: 'text', label: '端太材（縦端太・横端太）', full: true, placeholder: '例：単管パイプ＠450' },
+            ] },
+          { id: 'system', tone: 'neutral', title: 'システム型枠', showWhen: { field: 'kouhou', includes: 'システム型枠' },
+            fields: [
+              { id: 'system_seihin', type: 'text', label: '製品名・メーカー', full: true, placeholder: '例：○○パネル（○○建材）' },
+              { id: 'system_wari', type: 'text', label: '割付・支持の考え方', full: true, placeholder: '例：割付図に基づき定尺優先で配置' },
+            ] },
+          { id: 'deck', tone: 'neutral', title: 'デッキプレート（床型枠）', showWhen: { field: 'kouhou', includes: 'デッキプレート（床型枠）' },
+            fields: [
+              { id: 'deck_ita', type: 'text', label: '種類・板厚', placeholder: '例：フラットデッキ 1.2mm' },
+              { id: 'deck_shiji', type: 'text', label: '支持・固定方法', full: true, placeholder: '例：梁上に受け金物、端部溶接固定' },
+            ] },
+          { id: 'uchihanashi_sub', tone: 'neutral', title: '打放し仕上げ', showWhen: { field: 'uchihanashi', includes: '打放し' },
+            fields: [
+              { id: 'uh_wari', type: 'text', label: 'パネル割付の方針', full: true, placeholder: '例：目地・Pコン位置を意匠図と整合' },
+              { id: 'uh_pcon', type: 'text', label: 'Pコン・セパ処理', placeholder: '例：丸セパB型、Pコン後処理モルタル充填' },
+              { id: 'uh_mechigai', type: 'text', label: '目違い・不陸の管理', full: true, placeholder: '例：目違い◯mm以内、締付け順序を統一' },
+            ] },
+        ],
+      },
+      {
+        id: 'shoring', num: 3, title: '支保工計画',
+        lookat: '支保工の組立図・特記仕様書。高さ3.5m超にチェックを入れると、届出関連の欄が開きます。',
+        fields: [
+          { id: 'shichu', type: 'select', label: '支柱の種類',
+            options: [
+              {value:'',label:'─'},
+              {value:'パイプサポート',label:'パイプサポート'},
+              {value:'枠組支柱',label:'枠組支柱'},
+              {value:'システム支保工',label:'システム支保工'},
+              {value:'軽量支保梁',label:'軽量支保梁'}] },
+          { id: 'sagyou_shunin', type: 'text', label: '型枠支保工の組立て等作業主任者', full: true,
+            placeholder: '例：△△（技能講習修了者）' },
+          { id: 'takasa_over', type: 'checks', label: '支保工の高さ', full: true, role: 'highShoring',
+            options: [{ value: '超える', label: '支保工の高さが3.5mを超える' }] },
+        ],
+        subs: [
+          { id: 'todokede', tone: 'neutral', title: '高さ3.5m超（届出・組立図）', showWhen: { field: 'takasa_over', includes: '超える' },
+            fields: [
+              { id: 'todoke_kikai', type: 'text', label: '機械等設置届の提出先・時期', full: true,
+                placeholder: '例：所轄労働基準監督署へ工事開始30日前までに提出' },
+              { id: 'todoke_zu', type: 'text', label: '組立図の作成', full: true, placeholder: '例：支柱・はり・つなぎ・筋かいの配置を明記' },
+              { id: 'todoke_tsunagi', type: 'text', label: '水平つなぎ等', full: true, placeholder: '例：高さ2mごとに水平つなぎ、変位防止' },
+            ] },
+        ],
+      },
+      {
+        id: 'assembly', num: 4, title: '組立・建込み',
+        fields: [
+          { id: 'tejun', type: 'textarea', label: '建込み手順・順序', full: true,
+            placeholder: '例：墨出し→柱型枠→壁型枠→梁・スラブ型枠の順' },
+          { id: 'sokuatsu', type: 'text', label: '側圧への対応方針', full: true,
+            placeholder: '例：打込み速さ・高さに応じてせき板・支保工を選定' },
+          { id: 'kaiguchi', type: 'text', label: '開口・埋込みの処理', full: true, placeholder: '例：スリーブ・箱抜きの位置固定と検査' },
+        ],
+      },
+      {
+        id: 'accuracy', num: 5, title: '精度管理',
+        fields: [
+          { id: 'tateire', type: 'text', label: '建入れ・垂直の管理', full: true, placeholder: '例：下げ振り・トランシットで確認' },
+          { id: 'kyoyou', type: 'text', label: '位置・断面寸法の許容差', full: true, placeholder: '例：特記による。一般に位置±◯mm' },
+          { id: 'sokuryou', type: 'text', label: '測定・記録方法', full: true, placeholder: '例：各階建入れ直し後にチェックシート記録' },
+        ],
+      },
+      {
+        id: 'stripping', num: 6, title: '存置期間・取り外し',
+        lookat: '特記仕様書＋公共建築工事標準仕様書（建築工事編）。空欄なら参考値を併記します。',
+        fields: [
+          { id: 'sekiita_kijun', type: 'text', label: 'せき板の取り外し基準', full: true,
+            placeholder: '例：材齢◯日／圧縮強度◯N/mm²到達を確認' },
+          { id: 'shichu_kijun', type: 'text', label: '支柱の取り外し基準', full: true,
+            placeholder: '例：設計基準強度の◯％到達を供試体で確認' },
+          { id: 'kakunin', type: 'select', label: '強度確認の方法',
+            options: [
+              {value:'',label:'─'},
+              {value:'材齢による',label:'材齢による'},
+              {value:'現場水中養生供試体による',label:'現場水中養生供試体による'},
+              {value:'現場封かん養生供試体による',label:'現場封かん養生供試体による'}] },
+        ],
+      },
+      {
+        id: 'reuse', num: 7, title: '転用計画',
+        fields: [
+          { id: 'tenyou_kaisu', type: 'number', label: '転用回数（計画）', placeholder: '例：5' },
+          { id: 'tenyou_kanri', type: 'text', label: '転用時の点検・補修方針', full: true,
+            placeholder: '例：剥離剤塗布、損傷パネルは差し替え' },
+        ],
+      },
+      {
+        id: 'safety', num: 8, title: '安全管理',
+        fields: [
+          { id: 'kumitate_kaitai', type: 'textarea', label: '組立・解体時の安全対策', full: true,
+            placeholder: '例：解体は上から順に、立入禁止区画を設定' },
+          { id: 'rakka_boushi', type: 'text', label: '飛来・落下防止', full: true, placeholder: '例：先行手すり、材料の仮置き制限' },
+          { id: 'kinkyuu', type: 'textarea', label: '緊急時連絡体制', full: true,
+            placeholder: '例：現場代理人→所長→本社。救急連絡先を朝礼で周知' },
+        ],
+      },
+    ],
+    rules: [
+      { kind: 'checksInclude', field: 'method.kouhou',
+        subMap: {
+          '在来（合板型枠）': 'method.zairai',
+          'システム型枠': 'method.system',
+          'デッキプレート（床型枠）': 'method.deck' } },
+      { kind: 'checksInclude', field: 'method.uchihanashi',
+        subMap: { '打放し': 'method.uchihanashi_sub' } },
+      { kind: 'checksInclude', field: 'shoring.takasa_over',
+        subMap: { '超える': 'shoring.todokede' } },
+    ],
+  },
 
 };
 
