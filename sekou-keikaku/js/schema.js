@@ -424,6 +424,142 @@ const SCHEMA = {
     ],
   },
 
+  /* ========================================================
+     鉄骨工事（建方主体・接合方法で出し分け）
+     製作は製作要領書に委ね、本工種は建方・現場接合・受入以降を扱う
+     ======================================================== */
+  steel: {
+    id: 'steel',
+    label: '鉄骨工事',
+    sections: [
+      {
+        id: 'basic', num: 1, title: '基本情報',
+        fields: [
+          { id: 'koujimei', type: 'text', label: '工事名', required: true, full: true,
+            placeholder: '例：（仮称）○○ビル新築工事' },
+          { id: 'basho', type: 'text', label: '工事場所', full: true,
+            placeholder: '例：東京都立川市○○町1-2-3' },
+          { id: 'kouki_start', type: 'date', label: '工期（開始）', required: true, role: 'dateStart' },
+          { id: 'kouki_end', type: 'date', label: '工期（終了）', required: true, role: 'dateEnd' },
+          { id: 'parts', type: 'checks', label: '対象部位（複数選択可）', required: true, full: true,
+            role: 'parts',
+            options: ['柱','大梁','小梁','ブレース','柱脚','その他'].map(v => ({ value: v, label: v })) },
+          { id: 'kouzou', type: 'select', label: '構造種別',
+            options: [{value:'S',label:'S造'},{value:'SRC',label:'SRC造'}] },
+        ],
+      },
+      {
+        id: 'material', num: 2, title: '使用材料',
+        lookat: '構造図の特記仕様書・鉄骨リスト。部位で鋼材種別・断面が違う場合は「部位を追加」で分けて入力。製作段階の検査は製作要領書による。',
+        repeat: {
+          addLabel: '＋ 部位を追加', partsSource: 'parts',
+          fields: [
+            { id: 'part', type: 'select', label: '部位', partsOptions: true },
+            { id: 'kind', type: 'select', label: '鋼材種別',
+              options: [
+                {value:'',label:'─'},{value:'SN400B',label:'SN400B'},{value:'SN490B',label:'SN490B'},
+                {value:'SM490A',label:'SM490A'},{value:'SM490B',label:'SM490B'},
+                {value:'BCR295',label:'BCR295'},{value:'BCP325',label:'BCP325'},
+                {value:'STKR400',label:'STKR400'},{value:'STKN490B',label:'STKN490B'}] },
+            { id: 'danmen', type: 'text', label: '断面', placeholder: '例：H-400×200／□-500×22' },
+          ],
+        },
+      },
+      {
+        id: 'bolt_material', num: 3, title: '高力ボルト・受入',
+        lookat: '特記仕様書・ミルシート。受入検査は製作要領書の範囲外（現場受入以降）を記載。',
+        fields: [
+          { id: 'bolt_kind', type: 'select', label: '高力ボルトの種類', full: true,
+            options: [
+              {value:'',label:'─'},
+              {value:'高力六角ボルト（F10T）',label:'高力六角ボルト（F10T）'},
+              {value:'トルシア形高力ボルト（S10T）',label:'トルシア形高力ボルト（S10T）'},
+              {value:'溶融亜鉛めっき高力ボルト（F8T）',label:'溶融亜鉛めっき高力ボルト（F8T）'}] },
+          { id: 'ukeire', type: 'text', label: '鋼材の受入・ミルシート確認', full: true,
+            placeholder: '例：鋼種・規格をミルシートと照合、材質証明を保管' },
+        ],
+      },
+      {
+        id: 'joint', num: 4, title: '接合方法',
+        lookat: '構造図の接合指定・特記仕様書。使う接合方法にチェックを入れると、その方法の入力欄が下に開きます。',
+        fields: [
+          { id: 'kouhou', type: 'checks', label: '接合方法（複数選択可）', full: true, role: 'jointMethod',
+            options: ['高力ボルト接合','現場溶接'].map(v => ({ value: v, label: v })) },
+        ],
+        subs: [
+          { id: 'bolt', tone: 'neutral', title: '高力ボルト接合', showWhen: { field: 'kouhou', includes: '高力ボルト接合' },
+            fields: [
+              { id: 'bolt_kishu', type: 'text', label: '締付け機種', placeholder: '例：電動トルクレンチ／シヤーレンチ' },
+              { id: 'bolt_choryoku', type: 'text', label: '標準ボルト張力', placeholder: '例：特記による' },
+              { id: 'bolt_kakunin', type: 'select', label: '締付け確認方法',
+                options: [
+                  {value:'',label:'─'},
+                  {value:'トルク法',label:'トルク法'},
+                  {value:'ナット回転法',label:'ナット回転法'},
+                  {value:'ピンテール破断の確認（トルシア形）',label:'ピンテール破断の確認（トルシア形）'}] },
+              { id: 'bolt_masatsu', type: 'text', label: '摩擦面の処理・すべり係数', full: true,
+                placeholder: '例：自然発せい／ブラスト、すべり係数0.45以上' },
+            ] },
+          { id: 'weld', tone: 'neutral', title: '現場溶接', showWhen: { field: 'kouhou', includes: '現場溶接' },
+            fields: [
+              { id: 'weld_houhou', type: 'text', label: '溶接方法', placeholder: '例：半自動溶接（CO₂ガスシールドアーク）' },
+              { id: 'weld_shisei', type: 'text', label: '溶接姿勢', placeholder: '例：下向・立向・横向' },
+              { id: 'weld_shikaku', type: 'text', label: '溶接技能者の資格', full: true,
+                placeholder: '例：JIS Z 3801 相当の有資格者' },
+              { id: 'weld_kaisaki', type: 'text', label: '開先・エンドタブ', full: true,
+                placeholder: '例：開先形状は施工要領による、鋼製エンドタブ' },
+              { id: 'weld_yonetsu', type: 'text', label: '予熱・パス間温度', full: true,
+                placeholder: '例：鋼種・板厚・気温に応じ予熱、パス間温度を管理' },
+              { id: 'weld_kensa', type: 'text', label: '溶接検査', full: true,
+                placeholder: '例：外観検査＋超音波探傷試験（UT）、頻度は特記による' },
+            ] },
+        ],
+      },
+      {
+        id: 'erection', num: 5, title: '建方計画',
+        fields: [
+          { id: 'junjo', type: 'textarea', label: '建方順序・区画', full: true,
+            placeholder: '例：低層部から上層へ、○通り〜○通りを1区画として建方' },
+          { id: 'youjuu', type: 'text', label: '揚重機（種別・能力）', full: true,
+            placeholder: '例：クローラークレーン○t吊、定格荷重を揚重計画で確認' },
+          { id: 'tateire', type: 'text', label: '建入れ直し・建入れ検査', full: true,
+            placeholder: '例：ワイヤ・建入れ直し治具で調整、各節ごとに検査' },
+          { id: 'kari_bolt', type: 'text', label: '仮ボルト（本数比率）', full: true,
+            placeholder: '例：一群のボルト数の1/3以上かつ2本以上（中ボルト等）' },
+        ],
+      },
+      {
+        id: 'accuracy', num: 6, title: '精度管理',
+        lookat: '特記仕様書＋公共建築工事標準仕様書（建築工事編）／JASS6。空欄なら参考値を併記します。',
+        fields: [
+          { id: 'kyoyou', type: 'text', label: '建方精度の管理許容差', full: true,
+            placeholder: '例：柱の倒れ・建物の傾き・柱心のずれの許容差' },
+          { id: 'sokutei', type: 'text', label: '測定・記録方法', full: true,
+            placeholder: '例：トランシット・下げ振り・トータルステーションで測定、記録保管' },
+        ],
+      },
+      {
+        id: 'safety', num: 7, title: '安全管理',
+        fields: [
+          { id: 'tenraku', type: 'textarea', label: '墜落・転落防止', full: true,
+            placeholder: '例：親綱・安全帯（要求性能墜落制止用器具）、先行手すり、安全ブロック' },
+          { id: 'tamagake', type: 'text', label: '玉掛け・合図者', full: true,
+            placeholder: '例：玉掛け技能講習修了者、合図者を定め一定の合図で運用' },
+          { id: 'kyoufuu', type: 'text', label: '強風時等の作業中止基準', full: true,
+            placeholder: '例：10分間平均風速10m/s以上で建方作業を中止' },
+          { id: 'rakka', type: 'text', label: '飛来・落下防止', full: true,
+            placeholder: '例：工具の落下防止、立入禁止区画の設定' },
+          { id: 'kinkyuu', type: 'textarea', label: '緊急時連絡体制', full: true,
+            placeholder: '例：現場代理人→所長→本社。救急連絡先を朝礼で周知' },
+        ],
+      },
+    ],
+    rules: [
+      { kind: 'checksInclude', field: 'joint.kouhou',
+        subMap: { '高力ボルト接合': 'joint.bolt', '現場溶接': 'joint.weld' } },
+    ],
+  },
+
 };
 
 if (typeof module !== 'undefined' && module.exports) { module.exports = { SCHEMA }; }
