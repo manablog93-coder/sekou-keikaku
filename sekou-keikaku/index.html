@@ -1,232 +1,345 @@
-// 施工計画書たたき台ジェネレーター - 生成API（スキーマ駆動版）
-// 工種（kind）× プラン（free/premium）で systemプロンプトを出し分ける。
-// APIキーは Vercel の環境変数 ANTHROPIC_API_KEY に設定すること。
- 
-/* ---- 共通の土台（全工種・全プラン共通の厳守事項）---- */
-const BASE_RULES = `
-【厳守事項】
-1. これは施工管理責任者が確認・修正する前提のドラフトです。完成品として断定しない。
-   冒頭に「本書はドラフト（たたき台）であり、内容は施工管理責任者が確認・確定すること」の趣旨の注記を必ず入れる。
-2. 入力された数値・固有名詞は改変しない。勝手に補わない。
-3. 入力が空欄（null・空文字）の項目は、本文に「※要確認（未入力）」と明記する。推測で数値を埋めない。
-4. JASS5・公共建築工事標準仕様書レベルの一般的な施工方法・数値は、考慮の起点として本文に積極的に記載してよい。ただし：
-   - 「一般に〜とされる」と一般論であることを明示する
-   - 具体的数値を示した場合は、直後に「（適用する最新の仕様書・特記仕様書で数値を確認すること）」の但し書きを添える
-   - 現場固有の決定事項であるかのように断定しない
-5. 見出しは「###」レベルまでとする。「####」以下の見出しは使用しない。
-`;
- 
-/* ---- プラン別：確認ポイントの締め方 ---- */
-const CHECKPOINT_FREE = `
-【確認ポイント】
-- 各章末の確認ポイントは最重要の1〜2点に絞る。
-- 省略した点は末尾に「▶ 製品版では本章の確認ポイントをあと◯点出力します」と付記する
-  （点数が確定しにくい場合は「▶ 製品版では本章の確認ポイントをさらに網羅的に出力します」）。
-`;
-const CHECKPOINT_PREMIUM = `
-【確認ポイント】
-- 各章末に確認ポイントを箇条書きで添える。点数の上限は設けず、網羅的に出力する。漏れ防止を優先する。
-`;
- 
-/* ---- 工種別の本文方針 ---- */
-const KIND_BODY = {
-  concrete: `
-あなたは建築施工管理の実務経験が豊富な技術者です。
-入力されたコンクリート工事の情報をもとに、施工計画書のドラフトを作成します。
- 
-【出力形式】
-- Markdownで出力する
-- 章立ては以下の順・章番号で固定する：
-  1. 工事概要 / 2. 使用材料・配合計画 / 3. 打設計画（施工方法） / 4. 運搬・圧送計画 /
-  5. 養生計画 / 6. 品質管理計画 / 7. 季節対策 / 8. 安全衛生・体制
-- 「季節対策」に関する入力がない場合、7章は出力しない
-- 材料・配合は部位別の表形式（Markdownテーブル）で示す
-- 文体は施工計画書の書式に沿った「である調」
-`,
-  rebar: `
-あなたは建築施工管理の実務経験が豊富な技術者です。
-入力された鉄筋工事の情報をもとに、施工計画書のドラフトを作成します。
- 
-【定着・かぶりの記載方針】（5章・全プラン共通）
-- 利用者が入力したかぶり厚さ・定着長さがある場合は、それを本文に記載する。
-- 入力が空欄の場合は「※要確認（未入力）」としたうえで、補足として
-  公共建築工事標準仕様書（建築工事編）の一般的な標準値を「参考値」として併記してよい。ただし：
-  - 「公共建築工事標準仕様書（建築工事編）では一般に〜とされる」と出典と一般論であることを明示する
-  - 「適用する版・特記仕様書で必ず確認すること」の但し書きを添える
-  - 部位区分（土に接する/接しない、屋外/屋内、耐力壁/非耐力壁等）に応じた値であることを示し、単一の数値で断定しない
-  - これは確定値ではなく、利用者が確認・確定するための参考である旨を明示する
-  - 具体的な数値は、モデルの記憶に頼って断定せず、あくまで「参考として一般に示される範囲」に留める
- 
-【出力形式】
-- Markdownで出力する
-- 章立ては以下の順・章番号で固定する：
-  1. 工事概要 / 2. 使用材料 / 3. 加工計画 / 4. 継手計画 / 5. 定着・かぶり計画 /
-  6. 組立・配筋検査計画 / 7. 運搬・揚重・安全
-- 材料・かぶりは部位別に整理し、必要に応じて表形式を用いる
-- 文体は施工計画書の書式に沿った「である調」
-`,
-  formwork: `
-あなたは建築施工管理の実務経験が豊富な技術者です。
-入力された型枠工事の情報をもとに、施工計画書のドラフトを作成します。
- 
-【型枠工法・打放しの記載方針】（2章・全プラン共通）
-- 入力で「型枠工法」にチェックされた工法についてのみ、材料・施工方法を記載する。チェックのない工法には言及しない（「不採用」等も書かない）。
-- 「打放し仕上げあり」が入力された場合のみ、パネル割付・Pコン／セパ処理・目違い（不陸）管理を2章内の小節として記載する。入力がなければこれらの小節は出力しない。
- 
-【支保工計画の記載方針】（3章・全プラン共通）
-- 型枠支保工の組立て等作業主任者の選任は、支保工の高さに関わらず必ず記載する。
-- 「支保工の高さが3.5mを超える」が入力された場合のみ、機械等設置届（所轄労働基準監督署へ工事開始30日前まで）の提出、組立図の作成、水平つなぎ等の変位防止措置を記載する。入力がない場合、これらの届出・措置には一切言及しない（「不要」等も書かない）。
-- 側圧については「打込み速さ・打込み高さに応じた側圧を考慮してせき板・支保工を選定する」旨の方針記載にとどめ、側圧の計算値は示さない。
- 
-【存置期間・取り外しの記載方針】（6章・全プラン共通）
-- 利用者が入力したせき板・支柱の取り外し基準がある場合は、それを本文に記載する。
-- 入力が空欄の場合は「※要確認（未入力）」としたうえで、補足として公共建築工事標準仕様書（建築工事編）に一般に示される存置期間の考え方を「参考値」として併記してよい。ただし：
-  - 「公共建築工事標準仕様書（建築工事編）では一般に〜とされる」と出典と一般論であることを明示する
-  - 「適用する版・特記仕様書で必ず確認すること」の但し書きを添える
-  - セメントの種類・気温・部位（せき板／支柱）に応じて異なることを示し、単一の数値で断定しない
-  - 具体的な数値はモデルの記憶に頼って断定せず、「参考として一般に示される範囲」に留める
-- 入力された工期が寒中期間（11〜3月）にかかる場合、本章に「寒中コンクリートに該当する時期は、コンクリートの強度発現が遅れ、せき板・支柱の存置期間が通常より長くなる場合がある」旨を必ず記載する（用語は「寒中コンクリート」を用い、「冬期」等は使わない）。
- 
-【出力形式】
-- Markdownで出力する
-- 章立ては以下の順・章番号で固定する：
-  1. 工事概要 / 2. 型枠工法・使用材料 / 3. 支保工計画 / 4. 組立・建込み /
-  5. 精度管理 / 6. 存置期間・取り外し / 7. 転用計画 / 8. 安全管理
-- 文体は施工計画書の書式に沿った「である調」
-`,
-  steel: `
-あなたは建築施工管理の実務経験が豊富な技術者です。
-入力された鉄骨工事の情報をもとに、施工計画書のドラフトを作成します。
- 
-【対象範囲の線引き】（全プラン共通）
-- 本書は鉄骨建方を主体とし、現場での接合・建方精度・受入以降を対象とする。
-- 製作段階（工場での工作・加工・工場溶接・製品検査・寸法検査等）は製作要領書によるものとし、本書では詳細に立ち入らない。冒頭または2章でその旨を明示する。
- 
-【接合計画の記載方針】（4章・全プラン共通）
-- 入力で「接合方法」にチェックされた方法についてのみ記載する。チェックのない方法には言及しない（「不採用」等も書かない）。
- 
-【精度管理の記載方針】（6章・全プラン共通）
-- 利用者が入力した建方精度の管理許容差がある場合は、それを本文に記載する。
-- 入力が空欄の場合は「※要確認（未入力）」としたうえで、補足として公共建築工事標準仕様書（建築工事編）・JASS6に一般に示される建方精度の考え方を「参考値」として併記してよい。ただし：
-  - 「公共建築工事標準仕様書（建築工事編）・JASS6では一般に〜とされる」と出典と一般論であることを明示する
-  - 「適用する版・特記仕様書で必ず確認すること」の但し書きを添える
-  - 管理項目（柱の倒れ、建物の傾き、柱心のずれ等）に応じて許容差が異なることを示し、単一の数値で断定しない
-  - 具体的な数値はモデルの記憶に頼って断定せず、「参考として一般に示される範囲」に留める
- 
-【出力形式】
-- Markdownで出力する
-- 章立ては以下の順・章番号で固定する：
-  1. 工事概要 / 2. 使用材料 / 3. 高力ボルト・受入 / 4. 接合計画 /
-  5. 建方計画 / 6. 精度管理 / 7. 安全管理
-- 材料は部位別に整理し、必要に応じて表形式を用いる
-- 文体は施工計画書の書式に沿った「である調」
-`,
-};
- 
-/* ---- 工種別・プラン別の追加方針（継手の出し分け等）---- */
-const KIND_PLAN = {
-  rebar: {
-    free: `
-【継手計画の記載方針】（4章・無料版）
-- 継手は工法別の詳細出し分けを行わない。
-- 入力された継手工法名を列挙し、「工法別の詳細な管理項目・検査計画は継手施工要領による」旨の概要記載にとどめる。
-- 章末に「▶ 製品版では継手工法別（ガス圧接／機械式継手／重ね継手）の管理項目・検査計画を詳細に出力します」と付記する。
-`,
-    premium: `
-【継手計画の記載方針】（4章・製品版）
-- 入力された継手工法（ガス圧接／機械式継手／重ね継手）に該当する項目を、工法別に小節（4-1, 4-2…）として詳細に記載する。
-- 指定のない工法については記載しない。
-`,
-  },
-  concrete: { free: '', premium: '' },
-  formwork: {
-    free: `
-【存置期間の強度管理の記載方針】（6章・無料版）
-- 存置期間の判定に用いる圧縮強度の確認方法（現場水中養生／現場封かん養生の供試体による確認手順、材齢による方法との使い分け等）は、詳細に立ち入らず概要の記載にとどめる。
-- 章内に「▶ 製品版では存置期間の強度管理手順（供試体の採取・養生・試験のフロー）を詳細に出力します」と付記する。
-`,
-    premium: `
-【存置期間の強度管理の記載方針】（6章・製品版）
-- 存置期間の判定に用いる圧縮強度の確認方法を、供試体の採取・養生（現場水中養生／現場封かん養生）・試験・判定のフローとして詳細に記載する。
-- 材齢による方法と圧縮強度による方法の使い分け、判定に必要な強度水準の考え方（設計基準強度に対する割合等）を、一般論であることを明示しつつ記載する。
-`,
-  },
-  steel: {
-    free: `
-【接合計画の記載方針】（4章・無料版）
-- 接合は方法別の詳細出し分けを行わない。
-- 入力された接合方法名を挙げ、「方法別の詳細な管理項目・検査計画は接合施工要領による」旨の概要記載にとどめる。
-- 章末に「▶ 製品版では接合方法別（高力ボルト接合／現場溶接）の締付け管理・溶接施工要領・超音波探傷試験（UT）を含む検査計画を詳細に出力します」と付記する。
-`,
-    premium: `
-【接合計画の記載方針】（4章・製品版）
-- 入力された接合方法（高力ボルト接合／現場溶接）に該当する項目を、方法別に小節（4-1, 4-2…）として詳細に記載する。
-- 高力ボルト接合は締付け管理（締付け確認方法・トルク管理・マーキング等）、現場溶接は溶接施工要領（開先・予熱・パス間温度・エンドタブ等）と検査計画（外観検査・超音波探傷試験の頻度・判定）を含める。
-- 指定のない方法については記載しない。
-`,
-  },
-};
- 
-function buildSystemPrompt(kind, plan) {
-  const body = KIND_BODY[kind];
-  if (!body) return null;
-  const checkpoint = plan === 'premium' ? CHECKPOINT_PREMIUM : CHECKPOINT_FREE;
-  const kindPlan = (KIND_PLAN[kind] && KIND_PLAN[kind][plan]) || '';
-  return [body, BASE_RULES, checkpoint, kindPlan].join('\n');
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>施工計画書たたき台ジェネレーター（無料版）</title>
+<style>
+  :root {
+    --ink: #16324F;
+    --ink-soft: #3D5A78;
+    --paper: #F2F4F6;
+    --card: #FFFFFF;
+    --line: #D8DEE5;
+    --amber: #B97A0C;
+    --amber-bg: #FDF6E7;
+    --cold: #2D6CB5;
+    --cold-bg: #EAF2FB;
+    --hot: #C0512F;
+    --hot-bg: #FBEFEA;
+    --req: #C0392B;
+    --text: #2B3440;
+    --muted: #6B7682;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+    background: var(--paper); color: var(--text); line-height: 1.7; font-size: 15px;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 24px 16px 80px; }
+
+  .tool-head { background: var(--ink); color: #fff; border-radius: 10px; padding: 22px 24px; margin-bottom: 20px; }
+  .tool-head h1 { font-size: 20px; letter-spacing: .02em; }
+  .tool-head p { font-size: 13px; opacity: .85; margin-top: 6px; }
+  .free-tag { display: inline-block; font-size: 11px; font-weight: 700; background: #fff; color: var(--ink); border-radius: 3px; padding: 1px 8px; margin-left: 8px; vertical-align: middle; }
+
+  .kinds { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+  .kind {
+    border: 1.5px solid var(--line); background: var(--card); color: var(--ink-soft);
+    border-radius: 6px; padding: 8px 14px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .kind:hover { border-color: var(--ink); }
+  .kind.active { border-color: var(--ink); background: var(--ink); color: #fff; font-weight: 700; cursor: default; }
+  .kind.soon-kind { color: var(--muted); cursor: not-allowed; }
+  .kind.soon-kind:hover { border-color: var(--line); }
+  .kind .soon { font-size: 10px; opacity: .7; display: block; line-height: 1.2; }
+
+  .sec { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px 20px 22px; margin-bottom: 14px; }
+  .sec.dyn { display: none; }
+  .sec.dyn.show { display: block; }
+  .sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .sec-num { flex: none; width: 26px; height: 26px; border-radius: 5px; background: var(--ink); color: #fff; font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+  .sec-head h2 { font-size: 16px; color: var(--ink); }
+  .lookat { background: var(--amber-bg); border-left: 3px solid var(--amber); color: var(--amber); font-size: 12.5px; border-radius: 0 6px 6px 0; padding: 7px 12px; margin: 8px 0 14px; }
+  .lookat b { font-weight: 700; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+  .grid .full { grid-column: 1 / -1; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  label.fld, span.fld { display: block; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+  .req::after { content: " 必須"; color: var(--req); font-size: 10.5px; font-weight: 700; }
+  input[type="text"], input[type="number"], input[type="date"], select, textarea {
+    width: 100%; margin-top: 4px; border: 1.5px solid var(--line); border-radius: 6px;
+    padding: 9px 10px; font-size: 15px; font-family: inherit; background: #fff; color: var(--text);
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--ink); outline-offset: 1px; border-color: var(--ink); }
+  textarea { resize: vertical; min-height: 64px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .chk { display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--line); border-radius: 6px; padding: 7px 12px; font-size: 14px; cursor: pointer; background: #fff; user-select: none; }
+  .chk input { accent-color: var(--ink); }
+  .chk:has(input:checked) { border-color: var(--ink); background: #EDF2F7; font-weight: 700; }
+
+  .season-badges { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge { font-size: 12.5px; font-weight: 700; border-radius: 6px; padding: 5px 12px; display: none; animation: pop .25s ease; }
+  .badge.show { display: inline-block; }
+  .badge.cold { background: var(--cold-bg); color: var(--cold); border: 1px solid var(--cold); }
+  .badge.hot { background: var(--hot-bg); color: var(--hot); border: 1px solid var(--hot); }
+  @keyframes pop { from { transform: scale(.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .badge { animation: none; } }
+
+  .mix-block { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; margin-top: 10px; position: relative; }
+  .mix-block .rm { position: absolute; top: 8px; right: 8px; border: none; background: none; color: var(--muted); cursor: pointer; font-size: 13px; text-decoration: underline; }
+  .add-btn { margin-top: 10px; border: 1.5px dashed var(--ink-soft); background: none; color: var(--ink-soft); border-radius: 6px; padding: 8px 14px; font-size: 13.5px; font-weight: 700; cursor: pointer; width: 100%; font-family: inherit; }
+  .add-btn:hover { background: #EDF2F7; }
+
+  .season-note { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  .season-sub { display: none; margin-top: 10px; }
+  .season-sub.show { display: block; }
+  .season-sub h3 { font-size: 14px; margin-bottom: 8px; }
+  .season-sub.cold h3 { color: var(--cold); }
+  .season-sub.hot h3 { color: var(--hot); }
+  .season-sub.neutral { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: #FAFBFC; }
+  .season-sub.neutral h3 { color: var(--ink); }
+
+  .gen-btn { width: 100%; border: none; border-radius: 10px; background: var(--ink); color: #fff; font-size: 17px; font-weight: 700; padding: 16px; cursor: pointer; margin-top: 6px; font-family: inherit; }
+  .gen-btn:hover { background: #0F2438; }
+  .gen-btn:disabled { background: #9AA7B3; cursor: wait; }
+  .err-msg { color: var(--req); font-size: 13.5px; font-weight: 700; margin-top: 10px; display: none; }
+  .err-msg.show { display: block; }
+
+  .loading { display: none; text-align: center; padding: 28px 0 8px; color: var(--ink-soft); }
+  .loading.show { display: block; }
+  .spinner { width: 30px; height: 30px; border: 3px solid var(--line); border-top-color: var(--ink); border-radius: 50%; margin: 0 auto 10px; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #result { display: none; margin-top: 20px; }
+  #result.show { display: block; }
+  .result-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .result-bar h2 { font-size: 16px; color: var(--ink); }
+  .copy-btn { border: 1.5px solid var(--ink); background: #fff; color: var(--ink); border-radius: 6px; padding: 7px 16px; font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .copy-btn:hover { background: #EDF2F7; }
+  .doc { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 24px 22px; font-size: 14.5px; }
+  .doc h1 { font-size: 19px; color: var(--ink); margin: 0 0 12px; }
+  .doc h2 { font-size: 16px; color: var(--ink); margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 2px solid var(--ink); }
+  .doc h3 { font-size: 14.5px; color: var(--ink-soft); margin: 14px 0 6px; }
+  .doc p { margin: 8px 0; }
+  .doc ul { margin: 8px 0 8px 22px; }
+  .doc blockquote { border-left: 3px solid var(--amber); background: var(--amber-bg); padding: 8px 12px; margin: 10px 0; border-radius: 0 6px 6px 0; font-size: 13.5px; }
+  .doc table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13.5px; }
+  .doc th, .doc td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; }
+  .doc th { background: #EDF2F7; color: var(--ink); }
+  .doc .kakunin { color: var(--req); font-weight: 700; }
+  .doc .upsell-inline { color: var(--amber); font-weight: 700; }
+
+  .cta { margin-top: 18px; background: var(--ink); color: #fff; border-radius: 10px; padding: 20px 22px; }
+  .cta h3 { font-size: 16px; margin-bottom: 8px; }
+  .cta ul { margin: 0 0 14px 20px; font-size: 13.5px; opacity: .95; }
+  .cta a { display: inline-block; background: #fff; color: var(--ink); font-weight: 700; border-radius: 6px; padding: 10px 20px; text-decoration: none; font-size: 14px; }
+  .disclaimer { font-size: 12px; color: var(--muted); margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="tool-head">
+    <h1>施工計画書たたき台ジェネレーター<span class="free-tag">無料版</span></h1>
+    <p>工種を選んで、図面・仕様書から拾った情報を入力するだけ。施工計画書のドラフトを自動生成します。</p>
+  </div>
+
+  <!-- 工種タブ（スキーマから生成） -->
+  <div class="kinds" id="kind-tabs"></div>
+
+  <!-- フォーム（スキーマから生成） -->
+  <div id="form-mount"></div>
+
+  <button type="button" class="gen-btn" id="gen-btn" onclick="generate()">施工計画書のたたき台を生成する</button>
+  <div class="err-msg" id="err-msg"></div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div id="loading-msg">入力内容を整理しています…</div>
+  </div>
+
+  <div id="result">
+    <div class="result-bar">
+      <h2>生成結果（ドラフト）</h2>
+      <button type="button" class="copy-btn" id="copy-btn" onclick="copyResult()">テキストをコピー</button>
+    </div>
+    <div class="doc" id="doc"></div>
+
+    <div class="cta">
+      <h3>製品版なら、ここからさらに踏み込めます</h3>
+      <ul>
+        <li>内装・防水・左官・タイル・建具・塗装まで全工種に対応</li>
+        <li>継手工法別（ガス圧接／機械式／重ね継手）の詳細な管理項目・検査計画を出力</li>
+        <li>確認ポイントを上限なしで網羅出力（漏れ防止チェックリストとして使える）</li>
+        <li>Word（.docx）出力 ─ ※要確認箇所は黄色ハイライト付きで印刷してすぐ使える</li>
+        <li>入力内容の保存・呼び出し</li>
+      </ul>
+      <a href="https://note.com/navi93" target="_blank" rel="noopener">製品版の詳細を見る（note）</a>
+    </div>
+
+    <p class="disclaimer">本ツールが生成するのは施工計画書のドラフト（たたき台）です。記載内容・数値は必ず最新の設計図書・仕様書と照合し、施工管理責任者の確認のうえ確定してください。</p>
+  </div>
+
+</div>
+
+<script src="js/schema.js"></script>
+<script src="js/formbuilder.js"></script>
+<script>
+/* ---------- 工種タブ ---------- */
+const COMING_SOON = ['土工事・地業'];
+
+function buildTabs(activeId) {
+  const box = document.getElementById('kind-tabs');
+  box.innerHTML = '';
+  Object.values(SCHEMA).forEach(k => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'kind' + (k.id === activeId ? ' active' : '');
+    b.textContent = k.label;
+    b.onclick = () => { if (k.id !== FormBuilder.getKindId()) switchKind(k.id); };
+    box.appendChild(b);
+  });
+  COMING_SOON.forEach(label => {
+    const d = document.createElement('div');
+    d.className = 'kind soon-kind';
+    d.innerHTML = label + '<span class="soon">準備中</span>';
+    box.appendChild(d);
+  });
 }
- 
-module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POSTのみ受け付けます' });
- 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'サーバー設定エラー（APIキー未設定）' });
- 
-  let input;
-  try { input = typeof req.body === 'string' ? JSON.parse(req.body) : req.body; }
-  catch (e) { return res.status(400).json({ error: 'リクエスト形式が不正です' }); }
- 
-  if (!input || !input.data || !input.kind) {
-    return res.status(400).json({ error: '入力データまたは工種が指定されていません' });
+
+function switchKind(kindId) {
+  FormBuilder.render(kindId, document.getElementById('form-mount'));
+  buildTabs(kindId);
+  document.getElementById('result').classList.remove('show');
+  document.getElementById('err-msg').classList.remove('show');
+  lastMarkdown = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ---------- 生成 ---------- */
+const LOADING_MSGS = [
+  '入力内容を整理しています…',
+  '章立てに沿ってドラフトを作成中…（30秒〜1分ほどかかります）',
+  '確認ポイントをまとめています…',
+  'もう少しで完成します…'
+];
+let loadingTimer = null;
+let lastMarkdown = '';
+
+async function generate() {
+  const errEl = document.getElementById('err-msg');
+  errEl.classList.remove('show');
+
+  const errs = FormBuilder.validate();
+  if (errs.length) {
+    errEl.textContent = '未入力の必須項目があります：' + errs.join('／');
+    errEl.classList.add('show');
+    errEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
   }
-  const plan = input.plan === 'premium' ? 'premium' : 'free'; // 無料版ツールからは常に free
-  const system = buildSystemPrompt(input.kind, plan);
-  if (!system) return res.status(400).json({ error: '未対応の工種です' });
- 
-  const payload = JSON.stringify(input.data);
-  if (payload.length > 20000) return res.status(400).json({ error: '入力が大きすぎます' });
- 
-  const userPrompt = `以下の入力情報から、${input.data['工種'] || ''}の施工計画書ドラフトを作成してください。\n\n${payload}`;
- 
+
+  const data = FormBuilder.collect();
+  const btn = document.getElementById('gen-btn');
+  const loading = document.getElementById('loading');
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  loading.classList.add('show');
+  document.getElementById('result').classList.remove('show');
+
+  let msgIdx = 0;
+  document.getElementById('loading-msg').textContent = LOADING_MSGS[0];
+  loadingTimer = setInterval(() => {
+    msgIdx = Math.min(msgIdx + 1, LOADING_MSGS.length - 1);
+    document.getElementById('loading-msg').textContent = LOADING_MSGS[msgIdx];
+  }, 9000);
+
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('/api/generate', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 8000,
-        system,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: FormBuilder.getKindId(), plan: 'free', data })
     });
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('Anthropic API error:', response.status, errText);
-      return res.status(502).json({ error: '生成に失敗しました。しばらくしてからお試しください。' });
-    }
-    const data = await response.json();
-    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-    return res.status(200).json({ text });
-  } catch (err) {
-    console.error('Generate error:', err);
-    return res.status(500).json({ error: '生成中にエラーが発生しました' });
+    const json = await res.json();
+    if (!res.ok || !json.text) throw new Error(json.error || '生成に失敗しました');
+    lastMarkdown = json.text;
+    document.getElementById('doc').innerHTML = renderMarkdown(json.text);
+    document.getElementById('result').classList.add('show');
+    document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    errEl.textContent = e.message + '（時間をおいて再度お試しください）';
+    errEl.classList.add('show');
+  } finally {
+    clearInterval(loadingTimer);
+    loading.classList.remove('show');
+    btn.disabled = false;
+    btn.textContent = '施工計画書のたたき台を生成する';
   }
-};
- 
+}
+
+/* ---------- コピー ---------- */
+async function copyResult() {
+  if (!lastMarkdown) return;
+  try {
+    await navigator.clipboard.writeText(lastMarkdown);
+    const b = document.getElementById('copy-btn');
+    const t = b.textContent;
+    b.textContent = 'コピーしました ✓';
+    setTimeout(() => { b.textContent = t; }, 1800);
+  } catch (e) {
+    alert('コピーに失敗しました。テキストを選択して手動でコピーしてください。');
+  }
+}
+
+/* ---------- 簡易Markdownレンダラー ---------- */
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function inlineFmt(s) {
+  let out = escapeHtml(s);
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/※要確認（未入力）|※要確認/g, m => '<span class="kakunin">' + m + '</span>');
+  out = out.replace(/▶ 製品版で[^<]*/g, m => '<span class="upsell-inline">' + m + '</span>');
+  return out;
+}
+function renderMarkdown(md) {
+  const lines = md.split('\n');
+  let html = '', i = 0;
+  let inList = false, inQuote = false;
+  const closeBlocks = () => {
+    if (inList) { html += '</ul>'; inList = false; }
+    if (inQuote) { html += '</blockquote>'; inQuote = false; }
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim().startsWith('|') && i + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+      closeBlocks();
+      const headers = line.split('|').slice(1, -1).map(c => c.trim());
+      html += '<table><thead><tr>' + headers.map(h => '<th>' + inlineFmt(h) + '</th>').join('') + '</tr></thead><tbody>';
+      i += 2;
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        const cells = lines[i].split('|').slice(1, -1).map(c => c.trim());
+        html += '<tr>' + cells.map(c => '<td>' + inlineFmt(c) + '</td>').join('') + '</tr>';
+        i++;
+      }
+      html += '</tbody></table>';
+      continue;
+    }
+    if (/^###\s+/.test(line)) { closeBlocks(); html += '<h3>' + inlineFmt(line.replace(/^###\s+/, '')) + '</h3>'; }
+    else if (/^##\s+/.test(line)) { closeBlocks(); html += '<h2>' + inlineFmt(line.replace(/^##\s+/, '')) + '</h2>'; }
+    else if (/^#\s+/.test(line)) { closeBlocks(); html += '<h1>' + inlineFmt(line.replace(/^#\s+/, '')) + '</h1>'; }
+    else if (/^\s*[-*]\s+/.test(line)) {
+      if (inQuote) { html += '</blockquote>'; inQuote = false; }
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += '<li>' + inlineFmt(line.replace(/^\s*[-*]\s+/, '')) + '</li>';
+    }
+    else if (/^>\s?/.test(line)) {
+      if (inList) { html += '</ul>'; inList = false; }
+      if (!inQuote) { html += '<blockquote>'; inQuote = true; }
+      html += inlineFmt(line.replace(/^>\s?/, '')) + ' ';
+    }
+    else if (/^---+\s*$/.test(line.trim())) { closeBlocks(); html += '<hr>'; }
+    else if (line.trim() === '') { closeBlocks(); }
+    else { closeBlocks(); html += '<p>' + inlineFmt(line) + '</p>'; }
+    i++;
+  }
+  closeBlocks();
+  return html;
+}
+
+/* ---------- 初期化 ---------- */
+switchKind('concrete');
+</script>
+</body>
+</html>
