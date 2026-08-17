@@ -209,13 +209,8 @@ function switchKind(kindId) {
 }
 
 /* ---------- 生成 ---------- */
-const LOADING_MSGS = [
-  '入力内容を整理しています…',
-  '章立てに沿ってドラフトを作成中…（30秒〜1分ほどかかります）',
-  '確認ポイントをまとめています…',
-  'もう少しで完成します…'
-];
-let loadingTimer = null;
+let secTimer = null;
+let genStart = 0;
 let lastMarkdown = '';
 
 async function generate() {
@@ -239,11 +234,14 @@ async function generate() {
   document.getElementById('result').classList.remove('show');
 
   let msgIdx = 0;
-  document.getElementById('loading-msg').textContent = LOADING_MSGS[0];
-  loadingTimer = setInterval(() => {
-    msgIdx = Math.min(msgIdx + 1, LOADING_MSGS.length - 1);
-    document.getElementById('loading-msg').textContent = LOADING_MSGS[msgIdx];
-  }, 9000);
+  genStart = Date.now();
+  const elapsedSec = () => Math.floor((Date.now() - genStart) / 1000);
+  const paintMsg = () => {
+    document.getElementById('loading-msg').textContent =
+      'ドラフトを作成中…（経過 ' + elapsedSec() + '秒／目安 60〜90秒ほど）';
+  };
+  paintMsg();
+  secTimer = setInterval(paintMsg, 1000);
 
   try {
     const res = await fetch('/api/generate', {
@@ -254,14 +252,17 @@ async function generate() {
     const json = await res.json();
     if (!res.ok || !json.text) throw new Error(json.error || '生成に失敗しました');
     lastMarkdown = json.text;
+    const took = Math.max(1, Math.round((Date.now() - genStart) / 1000));
     document.getElementById('doc').innerHTML = renderMarkdown(json.text);
+    const rb = document.querySelector('#result .result-bar h2');
+    if (rb) rb.textContent = '生成結果（ドラフト）　— 生成時間 ' + took + '秒';
     document.getElementById('result').classList.add('show');
     document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     errEl.textContent = e.message + '（時間をおいて再度お試しください）';
     errEl.classList.add('show');
   } finally {
-    clearInterval(loadingTimer);
+    clearInterval(secTimer);
     loading.classList.remove('show');
     btn.disabled = false;
     btn.textContent = '施工計画書のたたき台を生成する';
